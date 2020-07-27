@@ -1,0 +1,388 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+    <title>Reading an arbitrary number of files into Stata made easy</title>
+
+    <meta name="description" content="Implementing Programming Patterns in Mata to Optimize Your Code">
+    <meta name="author" content="William R. Buchanan">
+    <meta name="institution" content="Fayette County Public Schools">
+    <meta name="title" content="Director of Grants, Research, Accountability, & Data">
+    <meta name="location" content="701 East Main Street, Lexington, KY 40502">
+    <meta name="contact" content="Billy.Buchanan@fayette.kyschools.us">
+
+    <link rel="stylesheet" href="dist/reset.css">
+    <link rel="stylesheet" href="dist/reveal.css">
+    <link rel="stylesheet" href="dist/theme/black.css" id="theme">
+
+    <!-- Theme used for syntax highlighted code -->
+    <link rel="stylesheet" href="plugin/highlight/monokai.css" id="highlight-theme">
+    <style>
+        .fragment.current-visible.visible:not(.current-fragment) {
+            display: none;
+            height:0px;
+            line-height: 0px;
+            font-size: 0px;
+        }
+    </style>
+    <script src="dist/reveal.js"></script>
+    <script src="plugin/notes/notes.js"></script>
+    <script src="plugin/markdown/markdown.js"></script>
+    <script src="plugin/highlight/highlight.js"></script>
+</head>
+<body>
+<div class="reveal">
+    <div class="slides">
+        <section>
+            <h2>Reading an arbitrary number of files into Stata made easy</h2>
+            <p>
+                <small><a href="https://github.com/wbuchanan" tabindex="-1">Billy Buchanan, Ph.D.</a> </br>
+                    <a href="http://www.fcps.net/administration/departments/data" tabindex="-1">Director, Office of
+                        Grants, Research, Accountability, &amp; Data</a></br>
+                    <a href="https://scorecard.fcps.net/" tabindex="-1">Fayette County Public Schools</a></br>
+                </small>
+            </p>
+            <div style="font-size:48px; font-weight:bold">
+                <a href="https://wbuchanan.github.io/stataConference2020-readit" tabindex="-1">https://wbuchanan.github.io/stataConference2020-readit</a>
+            </div>
+        </section>
+
+        <!-- Motivation -->
+        <section>
+            <section data-autoslide="2500">
+                <h2>Motivation</h2>
+            </section>
+            <section data-transition="slide-in fade-out">
+                <h3>Stata users regularly look for solutions to reading and appending multiple files efficiently.</h3>
+            </section>
+            <section>
+                <div class="r-stack">
+                    <p class="fragment fade-in-then-out" data-transition-speed="slow"><a href="http://www.stata.com/statalist/archive/2004-08/msg00697.html" target="_blank">Bautista (2004)</a> tried to find a solution when files used standardized naming.</p>
+                    <p class="fragment fade-in-then-out" data-transition-speed="slow"><a href="https://www.stata.com/statalist/archive/2013-12/msg00241.html" target="_blank">Boyle (2013)</a> tried to store multiple file names in a .txt file in order to merge/append files.</p>
+                    <p class="fragment fade-in-then-out" data-transition-speed="slow"><a href="https://www.statalist.org/forums/forum/general-stata-discussion/general/1416125-loop-over-specific-files" target="_blank">Picard (2014)</a> proposed a solution using a combination of two programs he developed (filelist and runby) to handle cases where the data are all in the same format.</p>
+                    <p class="fragment fade-in" data-transition-speed="slow"><a href="https://www.statalist.org/forums/forum/general-stata-discussion/general/1530135-append-all-dta-files-in-directory?p=1530553#post1530553" target="_blank">Rising (2020)</a> also provided an elegant one line solution when all files are Stata formatted files.</p>
+                </div>
+                <aside class="notes">
+                    <ul>
+                        <li>This represents only a small number of instances of users seeking help doing this on the StataList.</li>
+                        <li>I only selected a small number of threads with the intent of showing the persistence of this issue over time.</li>
+                        <li>A quick search on StataList and/or the StataList Archives will reveal a ton of other similar examples.</li>
+                    </ul>
+                </aside>
+            </section>
+            <section>
+                <div class="r-stack">
+                    <p class="fragment fade-in-then-out" data-transition-speed="slow">Each of the solutions in those threads have their own advantages/disadvantages.</p>
+                    <p class="fragment fade-in-then-out" data-transition-speed="slow">But they all share at least one constraint due to the functionality of <code>append</code>.</p>
+                    <p class="fragment fade-in-then-out" data-transition-speed="slow"><code>append</code>ing files requires them to already be in Stata's file format.</p>
+                    <p class="fragment fade-in-then-out" data-transition-speed="slow">If the files aren't already Stata files, then you also deal with I/O performance bottlenecks.</p>
+                    <p class="fragment fade-in-then-out" data-transition-speed="slow">And while <code>frames</code> supports joins/merges, it doesn't support union/append operations at this time.</p>
+                    <p class="fragment fade-in" data-transition-speed="slow">It is also likely that this is constrained by serial operation.</p>
+                </div>
+                <aside class="notes">
+                    <ul>
+                        <li>In most use cases this probably isn't a terribly bad thing.</li>
+                        <li>As the number of files grows, so too will some of the performance issues/penalties.</li>
+                        <li>The I/O Bottleneck is driven primarily by the need to either write Stata formatted files to disk, or to write tempfiles to disk.</li>
+                        <li>The comment about frames also makes the assumption that frames are storing all the representations in memory and not writing data to temp files on the disk.</li>
+                    </ul>
+                </aside>
+            </section>
+        </section>
+
+        <!-- The alpha version -->
+        <section>
+            <section data-autoslide="2500">
+                <h2>Introducing <code>readit</code></h2>
+            </section>
+            <section>
+                <div class="r-stack">
+                    <p class="fragment fade-in-then-out">The introduction of the Python API in Stata 16 provides many unique opportunities for the Stata community.</p>
+                    <p class="fragment fade-in-then-out">The pandas library is capable of reading/writing myriad file formats used in data science/analytics.</p>
+                    <p class="fragment fade-in-then-out">The pandas library also contains a lot of useful functionality for data munging.</p>
+                    <p class="fragment fade-in">The pandas library operates on objects in memory.</p>
+                </div>
+                <aside class="notes">
+                    <ul>
+                        <li>Make sure to mention challenges with dependency management.</li>
+                        <li>Leveraging existing capability from Pandas to make things a bit easier.</li>
+                        <li>Will definitely need additional help testing.</li>
+                        <li>Pandas also creates some challenges in the manner in which missing data are represented.</li>
+                    </ul>
+                </aside>
+            </section>
+            <section>
+                <h3>Dependencies</h3>
+                <table style="font-size: large; border-bottom: solid; border-top: solid;">
+                    <thead>
+                        <td>Package</td><td>Version</td><td>Used for</td>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Pandas</td><td>&ge;1.0.0</td><td>All core functionality</td>
+                        </tr>
+                        <tr>
+                            <td>pyarrow</td><td>&ge;0.17.1</td><td>I/O of Apache Arrow/Parquet files</td>
+                        </tr>
+                        <tr>
+                            <td>fastparquet</td><td>&ge;0.4.0</td><td>I/O of Parquet files</td>
+                        </tr>
+                        <tr>
+                            <td>xlrd</td><td>&ge;1.2.0</td><td>I/O of MS Excel files</td>
+                        </tr>
+                        <tr>
+                            <td>pyreadstat</td><td>&ge;1.0.0</td><td>I/O of SPSS and SAS files</td>
+                        </tr>
+                        <tr>
+                            <td>h5py</td><td>&ge;2.10.0</td><td>I/O of Hadoop Distributed File System (HDF5) files</td>
+                        </tr>
+                        <tr>
+                            <td>Cython</td><td>&ge;0.21</td><td>I/O of Hadoop Distributed File System (HDF5) files</td>
+                        </tr>
+                        <tr>
+                            <td>numexpr</td><td>&ge;2.7.1</td><td>I/O of Hadoop Distributed File System (HDF5) files</td>
+                        </tr>
+                        <tr>
+                            <td>tables</td><td>&ge;3.6.1</td><td>I/O of Hadoop Distributed File System (HDF5) files</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <aside class="notes">
+                    <ul>
+                        <li>Mention work to make things pip installable</li>
+                        <li>On the next slide is code that can be copied/pasted to install necessary dependencies on your system.</li>
+                    </ul>
+                </aside>
+            </section>
+            <section>
+                <h3>Installing depedencies:</h3>
+                <pre>
+                    <code data-trim data-noescape data-line-numbers="1,4,5">
+                        pip install 'pandas>=1.0.0'
+                        pip install 'pyarrow>=0.17.1'
+                        pip install 'fastparquet>=0.4.0'
+                        pip install 'xlrd>=1.2.0'
+                        pip install 'pyreadstat>=1.0.0'
+                        pip install 'h5py>=2.10.0'
+                        pip install 'Cython>=0.21'
+                        pip install 'numexpr>=2.7.1'
+                        pip install 'tables>=3.6.1'
+                    </code>
+                </pre>
+                <p>
+                    <small>
+                        <em>Note: The pip binary must be on your path and should be the pip used by the Python installation that Stata references.</em>
+                    </small>
+                </p>
+                <aside class="notes">
+                    <ul>
+                        <li>This is just a quick example showing how to pip install packages with the appropriate versions.</li>
+                        <li>If you never intend to read any Apache Arrow/Feather/Parquet files, you wouldn't need to install pyarrow or fastparquet.</li>
+                    </ul>
+                </aside>
+            </section>
+            <!-- File type Inference -->
+            <section>
+                <h3>File Type Inference</h3>
+                <table style="border-top: solid; border-bottom: solid; font-size: large;">
+                    <thead>
+                        <td>Extension</td><td>File Type</td>
+                    </thead>
+                    <tbody>
+                        <tr><td>.dta</td><td>Stata</td></tr>
+                        <tr><td>.xls(x)</td><td>MS Excel</td></tr>
+                        <tr><td>.csv</td><td>Comma Delimited</td></tr>
+                        <tr><td>.pkl/.pickle</td><td>Pickle</td></tr>
+                        <tr><td>.sas7bdat/.xport</td><td>SAS</td></tr>
+                        <tr><td>.tab/.tsv</td><td>Tab Delimited</td></tr>
+                        <tr><td>.txt/.dat</td><td>Fixed-Width</td></tr>
+                        <tr><td>.json</td><td>JSON</td></tr>
+                        <tr><td>.html</td><td>HTML</td></tr>
+                        <tr><td>.feather</td><td>Apache Arrow/Parquet</td></tr>
+                        <tr><td>.parquet</td><td>Parquet</td></tr>
+                        <tr><td>.h5</td><td>HDF5</td></tr>
+                        <tr><td>.sav</td><td>SPSS</td></tr>
+                    </tbody>
+                </table>
+                <aside class="notes">
+                    <ul>
+                        <li>Because pandas has several different methods to read different files, a simple heuristic was needed to try to reliably call the correct method for the file.</li>
+                        <li>This table helps to show how readit handles files with the different extensions.</li>
+                        <li>Maybe mention how there are similar heuristics used to coerce data types?</li>
+                    </ul>
+                </aside>
+            </section>
+            <section data-autoslide="2000">
+                <h3>Disclaimer:</h3>
+                <p>This is a very early version of the program and work is already underway to refactor a non-trivial amount of the codebase.</p>
+                <aside class="notes">
+                    <ul>
+                        <li>I attempted to test things with SAS files created with StatTransfer 16, but it seems like the files were not properly generated.</li>
+                    </ul>
+                </aside>
+            </section>
+            <!-- Describe the API here -->
+            <section>
+                <pre>
+                    <code data-trim data-noescape>
+                        /*
+                          Note: When specifying the file(s), I strongly recommend
+                          using double quotes to enclose the full string and using
+                          individual apostrophe/single quote characters to delimit
+                          each individual file/path within.
+
+                          Clear data from memory then read and append all SPSS files
+                          in a directory
+                        */
+                        readit "'test/*.sav'", c
+                    </code>
+                </pre>
+                <aside class="notes">
+                    <ul>
+                        <li>I created a test subdirectory with a bunch of smaller versions of the auto.dta dataset in my development directory.</li>
+                        <li>I'll try to switch over to this now to show you what it looks like.</li>
+                        <li></li>
+                    </ul>
+                </aside>
+            </section>
+            <section>
+                <pre>
+                    <code data-trim data-noescape>
+                        /*
+                          Read all the files starting with auto in the directory &
+                          then rename the gear_ratio variable after all the files
+                          are appended.
+                        */
+                        readit "'test/auto*'", ren('gear_ratio': 'gratio') c
+                    </code>
+                </pre>
+            </section>
+            <section>
+                <pre>
+                    <code data-trim data-noescape>
+                        /*
+                        Read all of the Excel, SPSS, and Feather files in the directory,
+                        rename multiple columns, and pass arguments to the pandas API
+                        for CSV and SPSS files.
+                        */
+                        readit "'test/*.xlsx', 'test/*.feather', 'test/*.sav'", ///
+                        ren('src2' : 'backupsrc', 'gear_ratio' : 'gearRatio', 'datatype': 'filetype') ///
+                        "sep = ',', na_values = '', convert_categoricals = False"
+                    </code>
+                </pre>
+            </section>
+            <section>
+                <h3>Challenges/Limitations</h3>
+                <ul>
+                    <li><code>Python which</code> will determine if there is a package of the same name available, but does not return the <code>__version__</code> string.</li>
+                    <li>Datetime variables have not been tested.</li>
+                    <li>Products like StatTransfer can actually create issues when they attempt to optimize the storage of the data on disk.</li>
+                </ul>
+                <aside class="notes">
+                    <ul>
+                        <li>This means that it isn't the easiest thing to test for dependencies at the moment.</li>
+                        <li>The internals of the program also include some data type inference heuristics which become necessary when working with missing/optimized files.</li>
+                        <li>If the data types are all perfectly consistent when being read into Pandas, there is a need to coerce the data to a consistent type.</li>
+                    </ul>
+                </aside>
+            </section>
+        </section>
+
+        <!-- Planned Improvements -->
+        <section>
+            <section data-autoslide="2500">
+                <h2>Roadmap</h2>
+            </section>
+            <section>
+                <div class="r-stack">
+                    <p class="fragment fade-in-then-out">Adding additional parsing capabilities to provide file specific flexibility when used interactively.</p>
+                    <p class="fragment fade-in-then-out">Depending on Zhao Xu's talk on the 30th developing unit tests for the program.</p>
+                    <p class="fragment fade-in-then-out">Distribution of the Python code via PyPI/conda.</p>
+                    <p class="fragment fade-in-then-out">Using a JSON schema to define/validate a configuration file that can be passed as a single argument.</p>
+                    <p class="fragment fade-in" data-transition-speed="slow">Concurrent (i.e., parallel) processing of file reads.</p>
+                </div>
+                <aside class="notes">
+                    <ul>
+                        <li>Currently, it isn't possible to specify which variables to rename on a file-by-file basis.  With future releases this should be possible, and will likely require similar non-traditional Stata syntax.</li>
+                        <li>Unit testing isn't the easiest thing at the moment since all of the code needs to be controlled by the Stata instance.  By decoupling more of the code base (or based on the talk) it might be possible to more rigorously test the code prior to a wider release.</li>
+                        <li>Right now users will need to have modules installed on their machines.  Many Python developers use virtual environments so any modules/packages are installed locally to a specific directory.  Making the code pip installable will make it easier to manage dependencies.</li>
+                        <li>Using a JSON schema means proving a more robust way to test/check syntax errors in the specification of the configuration files.  It also means defining standardized semantics that can be used to define how the program should operate.</li>
+                        <li>The current version of readit uses a class and methods to work its magic.  This doesn't really work so well for multiprocessing (e.g., non-shared memory based concurrency).  Multithreading may not be the sole solution either.</li>
+                        <li>Multithreading support will be added prior to any multiprocessing support since it uses a shared memory model.</li>
+                    </ul>
+                </aside>
+            </section>
+            <section>
+                <h3>Configuration File Based Operation:</h3>
+                <pre style="width: 75vw!important; margin-left: -15%;">
+                    <code data-noescape data-trim data-line-numbers="1|2-4|6-12|20-30">
+                        {
+                            "renameAll": {"var1": "timestamp", "var2": "firmid", "var3": "stockprice"},
+                            "globalFileType": "",
+                            "globalOptions": {},
+                            "files": [
+                                {
+                                    "filenm": "/Users/user/Desktop/myMessyData/file1.sas7bdat",
+                                    "ext" : ".sas7bdat",
+                                    "filetype": "sas",
+                                    "rename": {},
+                                    "options": {}
+                                },
+                                {
+                                    "filenm": "/Users/user/Desktop/myMessyData/file2.feather",
+                                    "ext" : ".feather",
+                                    "filetype": "feather",
+                                    "rename": { "xyz": "var3", "abc": "var1", "lmno": "var2"},
+                                    "options": {}
+                                },
+                                {
+                                    "filenm": "/Users/user/Desktop/myMessyData/file3.csv",
+                                    "ext" : ".csv",
+                                    "filetype": "csv",
+                                    "rename": {},
+                                    "options": {
+                                        "sep": ",;",
+                                        "names": ["var1", "var2", "var3"],
+                                        "parse_dates": true
+                                    }
+                                }
+                            ]
+                        }
+                    </code>
+                </pre>
+                <aside class="notes">
+                    <ul>
+                        <li>JSON Schema is already defined in the development branch of the repository.</li>
+                        <li>In addition to working interactively, the future version of the program will provide a method to save a configuration file for future use/modification.</li>
+                        <li>Rename options passed as attributes of individual files would be processed when that file is read, while the global rename attribute would be applied after all the files are appended.</li>
+                    </ul>
+                </aside>
+            </section>
+            <section>
+                <h4>If anyone is interested in collaborating on this feel free to let me know.</h4>
+            </section>
+        </section>
+
+    </div>
+</div>
+<script>
+    // More info about initialization & config:
+    // - https://revealjs.com/initialization/
+    // - https://revealjs.com/config/
+    Reveal.initialize({
+        hash: true,
+        transitionSpeed: 'slow',
+        // Learn about plugins: https://revealjs.com/plugins/
+        plugins: [ RevealMarkdown, RevealHighlight, RevealNotes ]
+    });
+
+    Reveal.on( 'slidetransitionend', event => {
+        Reveal.nextFragment();
+    });
+</script>
+
+
+</body>
+</html>
