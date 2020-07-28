@@ -216,10 +216,25 @@
             </section>
             <section data-autoslide="2000">
                 <h3>Disclaimer:</h3>
-                <p>This is a very early version of the program and work is already underway to refactor a non-trivial amount of the codebase.</p>
+                <p><small>This is a very early version of the program and work is already underway to refactor a non-trivial amount of the codebase.</small></p>
                 <aside class="notes">
                     <ul>
                         <li>I attempted to test things with SAS files created with StatTransfer 16, but it seems like the files were not properly generated.</li>
+                    </ul>
+                </aside>
+            </section>
+            <section>
+                <h3>Installation:</h3>
+                <pre>
+                    <code data-trim data-noescape>
+                        net inst readit, replace                   ///
+                            from("https://wbuchanan.github.io/readit")
+                    </code>
+                </pre>
+                <aside class="note">
+                    <ul>
+                        <li>The installation above will install the class-based version of readit</li>
+                        <li>I'm not planning to push anything to SSC until I've made the Python components pip installable.</li>
                     </ul>
                 </aside>
             </section>
